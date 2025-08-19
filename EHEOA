@@ -1,0 +1,152 @@
+import numpy as np
+import itertools
+import random
+
+def levy(d, beta=1.5):
+    sigma = (np.math.gamma(1 + beta) * np.sin(np.pi * beta / 2) /
+             (np.math.gamma((1 + beta) / 2) * beta * 2 ** ((beta - 1) / 2))) ** (1 / beta)
+    u = np.random.randn(d) * sigma
+    v = np.random.randn(d)
+    step = u / np.abs(v) ** (1 / beta)
+    return step
+
+def initialization_logistic(pop, dim, ub, lb):
+    ub = np.asarray(ub)
+    lb = np.asarray(lb)
+    Boundary_no = len(ub)
+    Positions = np.zeros((pop, dim))
+    for i in range(pop):
+        for j in range(dim):
+            x0 = np.random.rand()
+            a = 4
+            x = a * x0 * (1 - x0)
+            if Boundary_no == 1:
+                Positions[i, j] = (ub[0] - lb[0]) * x + lb[0]
+                Positions[i, j] = np.clip(Positions[i, j], lb[0], ub[0])
+            else:
+                Positions[i, j] = (ub[j] - lb[j]) * x + lb[j]
+                Positions[i, j] = np.clip(Positions[i, j], lb[j], ub[j])
+            x0 = x
+    return Positions
+
+def EHEOA_2017(N, Max_iter, lb, ub, dim, fobj, verbose=False):
+    if np.isscalar(lb):
+        lb = np.ones(dim) * lb
+    if np.isscalar(ub):
+        ub = np.ones(dim) * ub
+
+    X0 = initialization_logistic(N, dim, ub, lb)
+    X = X0.copy()
+
+    fitness = np.zeros(N)
+    for i in range(N):
+        fitness[i] = fobj(X[i, :][np.newaxis, :])
+
+    index = np.argsort(fitness)
+    fitness = fitness[index]
+    X = X[index, :]
+    GBestF = fitness[0]
+    AveF = np.mean(fitness)
+    curve = np.zeros(Max_iter)
+    avg_fitness_curve = np.zeros(Max_iter)
+    GBestX = X[0, :].copy()
+    X_new = X.copy()
+    search_history = np.zeros((N, Max_iter, dim))
+    fitness_history = np.zeros((N, Max_iter))
+
+    for it in range(Max_iter):
+        index = np.argsort(fitness)
+        fitness = fitness[index]
+        X = X[index, :].copy()
+        avg_fitness_curve[it] = AveF
+        fitness_new = np.zeros(N)
+        step_factor = 1 - it / Max_iter
+
+        for j in range(N):
+            choices = [i for i in range(N) if i != j]
+            ll = np.random.choice(choices, 2, replace=False)
+
+            options = [0.1, 0.2, 0.3, 0.4]
+            valid = [c for c in itertools.product(options, repeat=4) if abs(sum(c) - 1.0) < 1e-8]
+            ratios = random.choice(valid)
+            LNNumber = int(round(N * ratios[0]))
+            ENNumber = int(round(N * ratios[1]))
+            FNNumber = int(round(N * ratios[2]))
+
+            if it < Max_iter // 4:
+                num = np.random.randint(low=1, high=dim)
+                D = np.zeros(dim)
+                D[np.random.choice(dim, num, replace=False)] = 1
+                nor0 = np.random.random()
+                nor1 = np.random.random()
+                levy_step = levy(dim)
+                X_new[j, :] = (1 - D) * X[j, :] + D * (X[ll[1], :] + nor0 * (X[ll[0], :] - X[ll[1], :]) * step_factor) + nor1 * step_factor * levy_step
+
+            else:
+                if j < LNNumber:
+                    I = round(1 + np.random.random())
+                    choices = [i for i in range(N) if i != j]
+                    k = np.random.choice(choices)
+                    P = X[k, :].copy()
+                    F_P = fitness[k]
+                    rand_step = np.random.rand(dim) * step_factor
+                    if it%2 == 0 and it<800:
+                        xx = np.random.normal(loc=0.0, scale=5)
+                    else:
+                        xx = np.random.random()
+                    if fitness[j] > F_P:
+                        X_new[j, :] = X[j, :] + rand_step * (P - I * X[j, :]) + xx * step_factor * (GBestX - X[j, :])
+                    else:
+                        X_new[j, :] = X[j, :] + rand_step * (X[j, :] - P) + xx * step_factor * (GBestX - X[j, :])
+                elif LNNumber <= j < LNNumber + ENNumber:
+                    indices = np.random.permutation(dim)
+                    num_a = np.random.randint(1, dim)
+                    idx_a = indices[:num_a]
+                    idx_b = indices[num_a:]
+                    a = np.zeros(dim, dtype=int)
+                    b = np.zeros(dim, dtype=int)
+                    a[idx_a] = 1
+                    b[idx_b] = 1
+
+                    nor1 = np.random.uniform(0, 2, dim) * step_factor
+                    nor2 = np.random.normal(0, 2) * step_factor
+
+                    num = np.random.randint(low=1, high=dim)
+                    D = np.zeros(dim)
+                    D[np.random.choice(dim, num, replace=False)] = 1
+
+                    DirectVector = np.zeros((N, dim))
+                    RandNum = np.ceil((Max_iter - it) / Max_iter * np.random.rand() * (dim - 2) + 2)
+                    RandDim = np.random.permutation(dim)
+                    DirectVector[j, RandDim[:int(RandNum)]] = 1
+                    X_new[j, :] = (X[j, :] + DirectVector[j] * nor1 * (X[ll[0], :] - X[j, :]) + (1 - DirectVector[j]) * nor2 *
+                                   (X[ll[1], :] - X[j, :]))
+
+                elif LNNumber + ENNumber <= j < LNNumber + ENNumber + FNNumber:
+                    if np.random.random()>0.8 and (it<0.6*Max_iter or it>0.9*Max_iter):
+                        X_new[j, :] = X[j, :] + np.random.normal(loc=0.0, scale=10) * (X[ll[0], :] - X[ll[1], :]) #+ step_factor * levy(dim)
+                    else:
+                        X_new[j, :] = X[j, :] + np.random.rand(dim) * (GBestX - X[j, :]) #+ step_factor * np.random.random() * levy(dim)
+
+                else:
+                    if np.random.random()>0.8 and (it<0.6*Max_iter or it>0.9*Max_iter):
+                        X_new[j, :] = X[j, :] + np.random.normal(loc=0.0, scale=5) * np.random.random() * (X[-1, :] - np.mean(X, axis=0))
+                    else:
+                        X_new[j, :] = GBestX + np.random.random(dim) * (GBestX - X[j, :]) #* xs * step_factor
+
+            X_new[j, :] = np.clip(X_new[j, :], lb, ub)
+            fitness_new[j] = fobj(X_new[j, :][np.newaxis, :])
+            if fitness_new[j] < GBestF:
+                GBestF = fitness_new[j]
+                GBestX = X_new[j, :].copy()
+
+        X = X_new.copy()
+        fitness = fitness_new.copy()
+        AveF = np.mean(fitness)
+        curve[it] = GBestF
+        search_history[:, it, :] = X
+        fitness_history[:, it] = fitness
+
+    Best_pos = GBestX
+    Best_score = curve[-1]
+    return avg_fitness_curve, Best_pos, Best_score, curve, search_history, fitness_history
