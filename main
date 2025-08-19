@@ -1,0 +1,32 @@
+import csv,time
+from EHEOA import *
+
+dim = 10
+lb = -100
+ub = 100
+iter_num = 1000
+size = 50
+dic = {}
+t1 = time.time()
+# Using all functions:
+from cec2017.functions import all_functions
+n = 0
+for f in all_functions:
+    print(f"{f.__name__}")
+    ee = []
+    for c in range(30):
+        N = 50
+        Max_iteration = 1000
+        avg_fitness_curve, Best_pos, a, curve, search_history, fitness_history = EHEOA_2017(
+            N, Max_iteration, lb, ub, dim, f, verbose=True)
+        print('%.4E' % a)
+        ee.append(a)
+    nparr = np.array(ee)
+    print('%.4E' % nparr.min())
+    print('%.4E' % nparr.mean())
+    print('%.4E' % nparr.std())
+import pandas as pd
+t2 = time.time()
+print(t2-t1)
+df = pd.DataFrame(dic)
+# df.to_excel(r'C:\Users\admin\Desktop\2017\EHEOA.xls', sheet_name='EHEOA')
